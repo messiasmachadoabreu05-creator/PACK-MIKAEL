@@ -327,17 +327,25 @@ async def gerar_key(i,quantidade:app_commands.Range[int,1,1000],dias:app_command
         SUPA.table('keys').insert(rows).execute()
     except Exception as e: return await i.followup.send(f'Não consegui gerar no Supabase. Confira a migração SQL: {e}',ephemeral=True)
     await i.followup.send(f'{quantidade} KEY(s) de {dias or "validade vitalícia"} dias adicionadas ao Supabase.',ephemeral=True)
-@bot.tree.command(name='inspecionar-key',description='Inspeciona uma KEY sem mostrar o código completo')
-@app_commands.describe(codigo='Código da KEY')
-async def inspecionar_key(i,codigo:str):
+@bot.tree.command(name='inspecionar-key',description='Inspeciona a KEY mais recente enviada a uma pessoa')
+@app_commands.describe(pessoa='Pessoa que recebeu a KEY')
+async def inspecionar_key(i,pessoa:discord.Member):
     if not i.guild or not owner(i): return await i.response.send_message('Somente o dono pode inspecionar KEYS.',ephemeral=True)
-    try: rows=parse_rows(rpc('bot_inspect_key',{'p_code':codigo.strip().upper()}))
-    except Exception as e: return await i.response.send_message(f'Erro de conexão: {e}',ephemeral=True)
-    if not rows: return await i.response.send_message('KEY não encontrada.',ephemeral=True)
+    try:
+        require_supa()
+        rows=(SUPA.table('keys').select('id,code,plan,duration_days,redeemed_by,expires_at,bot_status,bot_sent_at,bot_reserved_by')
+              .eq('bot_reserved_by',str(pessoa.id)).eq('bot_status','sent')
+              .order('bot_sent_at',desc=True).limit(1).execute().data or [])
+    except Exception as e: return await i.response.send_message(f'Erro ao consultar a KEY no Supabase: {e}',ephemeral=True)
+    if not rows: return await i.response.send_message(f'Não encontrei uma KEY marcada como enviada para {pessoa.mention}.',ephemeral=True)
     k=rows[0]; embed=discord.Embed(title='Inspeção de KEY',color=BRAND_BLUE)
-    embed.add_field(name='Código',value=mask(k['code']),inline=False); embed.add_field(name='Plano',value=k.get('plan') or 'custom')
+    embed.add_field(name='Pessoa',value=pessoa.mention,inline=False)
+    embed.add_field(name='Código',value=mask(k['code']),inline=False)
+    embed.add_field(name='Plano',value=k.get('plan') or 'custom')
     embed.add_field(name='Estado',value=k.get('bot_status') or ('resgatada' if k.get('redeemed_by') else 'disponível'))
     embed.add_field(name='Expira',value=k.get('expires_at') or 'Ainda sem expiração')
+    if k.get('bot_sent_at'): embed.add_field(name='Enviada em',value=str(k['bot_sent_at']))
+    embed.set_footer(text='Exibindo a KEY mais recente registrada como enviada para esta pessoa.')
     await i.response.send_message(embed=embed,view=InspectKeyActions(str(k['id'])),ephemeral=True)
 @bot.tree.command(name='dar-key',description='Confirma a entrega direta de uma KEY para uma pessoa')
 async def dar_key(i,pessoa:discord.Member):
@@ -592,3 +600,4 @@ if not TOKEN:
 if not SUPA:
     print('AVISO: Supabase offline. KEYs e o restante do site exigem SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY.')
 bot.run(TOKEN)
+
