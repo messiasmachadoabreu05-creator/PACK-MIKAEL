@@ -600,3 +600,4 @@ if not TOKEN:
 if not SUPA:
     print('AVISO: Supabase offline. KEYs e o restante do site exigem SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY.')
 bot.run(TOKEN)
+
